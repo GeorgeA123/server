@@ -148,14 +148,14 @@ int service_client_socket (const int s, const char *const tag) {
 	}else if(header->method == UNSUPPORTED){
 		header->status = 501;
 	}
+	/*
 	fprintf(stderr, "stored data\nversion: %s\n", header->version);
 	fprintf(stderr,"resource: %s\n", header->resource);
 	fprintf(stderr,"userAgent: %s\n", header->userAgent);
 	fprintf(stderr,"status: %d\n", header->status);
 	fprintf(stderr,"method: %d\n", header->method);
-
+*/
 	error = sendResponse(s, header);
-	fprintf(stderr, "error: %d\n", error);
 /*
 #if (__SIZE_WIDTH__ == 64 || __SIZEOF_POINTER__  == 8)
 	printf("echoed %ld bytes back to %s, \"%s\"n", bytes, tag, buffer);

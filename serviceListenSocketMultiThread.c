@@ -50,6 +50,7 @@ static void * clientThread (void *data) {
 
 int serviceListenSocketMultiThread(int listenSocket){
 	while (1){
+		fprintf(stderr, "Connecting...");
 		thread_control_block_t *tcbP = malloc(sizeof(thread_control_block_t));
 		if (tcbP == 0){
 			perror("malloc error");
@@ -63,7 +64,7 @@ int serviceListenSocketMultiThread(int listenSocket){
 
 		if ((socketFileDiscript = accept(listenSocket, (struct sockaddr *) &(tcbP->their_address),
 								&(tcbP->their_address_size))) >= 0 ){
-
+			fprintf(stderr, "Connected");
 			tcbP->client = socketFileDiscript;
 
 			pthread_t thread;

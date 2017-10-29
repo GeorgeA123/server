@@ -14,7 +14,7 @@
 #include "service_client_socket.h"
 
 
-#define buffer_size = 1024
+#define buffer_size = 2048
 int findContentType(char* type, httpHeader* header){
 	int len = strlen(header->resource);
 
@@ -30,7 +30,10 @@ int findContentType(char* type, httpHeader* header){
 				strcat(type, "image/jpeg");
 			}
 
-	}else if (len > 3){
+
+	 }
+	 if (len > 3){
+
 		if (strcmp(&header->resource[len-4], ".css") == 0){
 			strcat(type, "text/css");
 		}else if (strcmp(&header->resource[len-4], ".xml") == 0){
@@ -41,35 +44,101 @@ int findContentType(char* type, httpHeader* header){
 			strcat(type, "image/gif");
 		}else if (strcmp(&header->resource[len-4], ".png") == 0){
 			strcat(type, "image/png");
+		}else if (strcmp(&header->resource[len-4], ".jpg") == 0){
+			strcat(type, "image/jpeg");
 		}
 
 	}
 
 	return 0;
 }
+int sendData (int socket,char* buffer, size_t size){
+
+
+	int sizeWritten;
+	while (size > 0){
+		fprintf(stderr, "writing... %s", buffer);
+		if ((sizeWritten = write(socket, buffer, size)) < 0){
+
+			return -1;
+		}else{
+
+			size -= sizeWritten;
+		}
+	}
+	return size;
+
+}
 int sendHeader(const int socket, httpHeader* header,  size_t size){
 	char contentType[1024];
-
 	findContentType(contentType, header);
+	if (header->version != NULL){
+		sendData(socket, header->version, strlen(header->version));
+	}else{
+		sendData(socket, "HTTP/1.1 ", strlen("HTTP/1.1")); //default to 1.1
+	}
+	fprintf(stderr, "CONTENT Type: %s\n", contentType);
 
-	fprintf(stderr, "content :  %s\n", contentType);
 
-	int n;
-	fprintf(stderr, "socket: %d\n", socket);
-	n = send(socket, header->version, strlen(header->version),0);
-	fprintf(stderr, "... %d\n", n);
-	n = send(socket, " 200 OK \r\n",10, 0);
-	n = send(socket, contentType, strlen(contentType),0);
-	n = send(socket, "\r\n",2,0);
-	n = send(socket, "Content-Length: ",16,0);
-	char strSize[256] = "";
-	snprintf(strSize, sizeof(strSize), "%zu", size);
-	n = send(socket, strSize, strlen(strSize),0);
-	n = send(socket, "\r\n",2,0);
-	n = send(socket, "\r\n",2,0);
+	if (header->status == 200){
 
+		char strSize[256] = "";
+		fprintf(stderr, "size of size: %zd ---", size);
+		snprintf(strSize, sizeof(strSize), "%zu", size);
+		fprintf(stderr, "size of strSize: %s ---", strSize);
+		if (sendData(socket, " 200 OK \r\n", strlen(" 200 OK \r\n")) < 0
+				|| sendData(socket, contentType, strlen(contentType)) < 0
+				||  sendData(socket, "\r\n", strlen("\r\n")) < 0
+				|| sendData(socket, "Content-Length:", strlen("Content-Length")) < 0
+				|| sendData(socket, strSize, strlen(strSize)) < 0
+				|| sendData(socket, "\r\n", strlen("\r\n")) < 0
+				|| sendData(socket, "\r\n",strlen("\r\n")) < 0)
+		{
+			return -1;
+		}
+	}else if(header->status == 400){
+		if (sendData(socket, " 400 Bad Request\r\n\r\n", strlen(" 400 Bad Request\r\n\r\n")) < 0)
+		{
+				return -1;
+		}
+	}else if(header->status == 403){
+		if (sendData(socket, " 403 Forbidden\r\n\r\n", strlen(" 403 Forbidden\r\n\r\n")) < 0)
+		{
+				return -1;
+		}
+	}else if(header->status == 404){
+		strcpy(contentType, "Content-Type: text/html; charset=utf-8");
+
+		if (sendData(socket, " 404 NOT FOUND\r\n", strlen(" 404 NOT FOUND\r\n")) < 0
+				|| sendData(socket, contentType, strlen(contentType)) < 0
+				|| sendData(socket, "\r\n", strlen("\r\n")) < 0
+				|| sendData(socket, "\r\n", strlen("\r\n")) < 0)
+		{
+			return -1;
+		}
+	}else if(header->status == 505){
+		if (sendData(socket, " 505 Bad Version \r\n", strlen(" 505 Bad Version \r\n")) < 0)
+		{
+			return -1;
+		}
+	}
 	return 0;
 
+}
+int sendBody(const int socket, httpHeader* header, char* buffer, size_t size){
+	if (header->status == 200){
+		return sendData(socket, buffer, size);
+	}else if (header->status ==400){
+		return sendData(socket,"400 BAD REQUEST", strlen("400 BAD REQUEST"));
+	}else if (header->status == 403){
+		return sendData(socket,"403 FORBIDDEN", strlen("403 FORBIDDEN"));
+	}else if (header->status == 404){
+		return sendData(socket, "404 NOT FOUND", strlen("404 NOT FOUND"));
+	}else if (header->status == 505){
+		return sendData(socket, "505 BAD VERSION", strlen("505 BAD VERSION"));
+	}
+
+	return -1;
 }
 int sendResponse(const int socket, httpHeader* header){
 
@@ -77,49 +146,54 @@ int sendResponse(const int socket, httpHeader* header){
 		perror("resource = null");
 		return -1;
 	}
-	char* buffer;
+	char* buffer = "";
 	size_t sizeOfFile = 0;
 	char fileURL[1024] = "web";
+
 	strcat(fileURL, header->resource);
 
 	FILE *fp = fopen(fileURL, "r");
 	if (fp == NULL){
 
 		if (header->status == 200){
-
 			header->status = 404;
 		}
 	}else{
 
-		int bufferSize = 0;
-		if (fseek(fp,0,SEEK_END) == 0){
-			bufferSize =ftell(fp);
+		long bufferSize = 0;
+		if (fseeko(fp,0L,SEEK_END) == 0){
+			bufferSize =ftello(fp);
 		}
-
-		fseek(fp,0, SEEK_SET);
+		rewind(fp);
 		buffer = malloc(sizeof(char) * bufferSize);
-		sizeOfFile = fread(buffer, sizeof(char), bufferSize, fp);
+		sizeOfFile = fread(buffer, sizeof(unsigned char), bufferSize, fp);
+		fprintf(stderr, "Size of File: %zd", sizeOfFile);
 
 	}
-	if (ferror(fp) != 0){
-		fprintf(stderr, "error\n");
+	if (fp != NULL){
+		if (ferror(fp) != 0){
+			fprintf(stderr, "error\n");
+		}
+		fclose(fp);
 	}
-	fprintf(stderr, "\n%s\n", header->resource);
-	fprintf(stderr, "\n%d\n", header->status);
-	fprintf(stderr, "\n%s\n", buffer);
-
-	fclose(fp);
 
 
 
 	int error = sendHeader(socket, header, sizeOfFile);
-	int errorTwo = strlen(buffer);
-	while (errorTwo > 0){
-		fprintf(stderr, "%d error2\n", errorTwo);
-		error = write(socket, buffer, strlen(buffer));
-		errorTwo = errorTwo -error;
+
+	fprintf(stderr, "error: %d", error);
+	if (error > 0){
+		fprintf(stderr,"not 200\n\n");
+
 	}
+	if (strcmp(buffer, "") == 0 && header->status == 200){
+		header->status = 404;
+	}
+	fprintf(stderr, "LENGTH OF BUFFER %d", strlen(buffer) );
+	long sent = sendBody(socket, header, buffer, sizeOfFile);
+	fprintf(stderr, "sent : %d \n", sent);
 
 	fprintf(stderr, "---------END---------");
+	close(socket);
 	return 0;
 }
